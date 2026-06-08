@@ -166,7 +166,7 @@ class TelegramUploader:
             self.last_current_bytes = current
             
             last_print = getattr(self, 'last_upload_print', 0)
-            if percent - last_print >= 25:
+            if percent - last_print >= 10:
                 print(f"      -> subindo arquivo atual: {percent:.0f}% ({current//(1024*1024)}MB / {total//(1024*1024)}MB)")
                 self.last_upload_print = percent
 

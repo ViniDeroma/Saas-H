@@ -70,7 +70,7 @@ while true; do
         printf "Enviar downloads para o Telegram? (s/N): "
         read usetg
         echo "----------------------------------------------------"
-        ARGS="--workers 16 -o \"$OUT\""
+        ARGS="--workers 8 -o \"$OUT\""
         if [ "$soimg" = "s" ] || [ "$soimg" = "S" ]; then ARGS="$ARGS --skip-images"; fi
         if [ "$usetg" = "s" ] || [ "$usetg" = "S" ]; then ARGS="$ARGS --telegram --clean-local"; fi
         
@@ -81,9 +81,7 @@ while true; do
         printf "Pesquisar por: "
         read termo
         [ -z "$termo" ] && continue
-        printf "Quantas paginas? (cada uma ~36 albuns) [1]: "
-        read paginas
-        [ -z "$paginas" ] && paginas=1
+        paginas="ask"
         printf "Baixar SO videos (sem imagens)? (s/N): "
         read soimg
         printf "Enviar downloads para o Telegram? (s/N): "
@@ -92,7 +90,7 @@ while true; do
         echo "ATENCAO: varias paginas = muitos albuns e muitos MB/GB!"
         echo "----------------------------------------------------"
         
-        ARGS="--search \"$termo\" --pages \"$paginas\" --workers 16 -o \"$OUT\""
+        ARGS="--search \"$termo\" --pages \"$paginas\" --workers 8 -o \"$OUT\""
         if [ "$soimg" = "s" ] || [ "$soimg" = "S" ]; then ARGS="$ARGS --skip-images"; fi
         if [ "$usetg" = "s" ] || [ "$usetg" = "S" ]; then ARGS="$ARGS --telegram --clean-local"; fi
         

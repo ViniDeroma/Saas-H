@@ -62,16 +62,21 @@ def is_search_or_listing(url: str) -> bool:
     return ("/search" in url) or ("?q=" in url) or ("/tag/" in url) or url.rstrip("/") == HOST
 
 
-def get_album_links(listing_url: str, pages: int, session: requests.Session):
+def get_album_links(listing_url: str, pages_str: str, session: requests.Session):
     """Coleta todos os links de album de uma pagina de busca/listagem (varias paginas)."""
     found = []
     seen = set()
     base = listing_url.split("#")[0]
     sep = "&" if "?" in base else "?"
 
-    for page in range(1, pages + 1):
+    if "-" in str(pages_str):
+        start_p, end_p = map(int, str(pages_str).split("-"))
+    else:
+        start_p = end_p = int(pages_str)
+
+    for page in range(start_p, end_p + 1):
         page_url = base if page == 1 else f"{base}{sep}page={page}"
-        print(f"  Lendo pagina {page}/{pages}: {page_url}")
+        print(f"  Lendo pagina {page} (limite {end_p}): {page_url}")
         try:
             resp = session.get(page_url, headers=HEADERS, timeout=30)
             resp.raise_for_status()
@@ -129,7 +134,7 @@ def download_file(url: str, dest_path: str, referer: str, session: requests.Sess
 
     for attempt in range(1, retries + 1):
         try:
-            with session.get(url, headers=headers, stream=True, timeout=(15, 60)) as r:
+            with session.get(url, headers=headers, stream=True, timeout=(10, 15)) as r:
                 r.raise_for_status()
                 total_size = int(r.headers.get('content-length', 0))
                 downloaded = 0
@@ -143,7 +148,7 @@ def download_file(url: str, dest_path: str, referer: str, session: requests.Sess
                             downloaded += len(chunk)
                             if total_size > 0:
                                 percent = (downloaded / total_size) * 100
-                                if percent - last_print >= 25:
+                                if percent - last_print >= 10:
                                     print(f"    -> {name}: {percent:.0f}%")
                                     last_print = percent
                 os.replace(tmp, dest_path)
@@ -199,7 +204,7 @@ def process_album(album_url: str, out_root: str, skip_images: bool, session: req
     return title, folder, downloaded_files
 
 
-def expand_targets(target: str, pages: int, session: requests.Session):
+def expand_targets(target: str, pages: str, session: requests.Session):
     """Transforma o alvo (album, busca, listagem ou .txt) numa lista de URLs de album."""
     # Arquivo .txt com varias URLs
     if os.path.isfile(target):
@@ -215,6 +220,24 @@ def expand_targets(target: str, pages: int, session: requests.Session):
 
     # Pagina de busca/listagem -> coletar varios albuns
     if is_search_or_listing(target):
+        if str(pages) == "ask":
+            print(f"\nBuscando informacoes sobre os resultados...")
+            try:
+                resp = session.get(target, headers=HEADERS, timeout=30)
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "html.parser")
+                max_p = 1
+                for a in soup.select('ul.pagination li a'):
+                    if a.text.isdigit():
+                        max_p = max(max_p, int(a.text))
+                
+                print(f"-> Foram encontradas {max_p} paginas no total para essa busca!")
+                pages = input("Qual pagina voce quer baixar? (ex: 3, ou 1-5) [padrao=1]: ").strip()
+                if not pages:
+                    pages = "1"
+            except Exception as e:
+                pages = "1"
+
         print(f"\n### Coletando albuns de: {target}")
         albums = get_album_links(target, pages, session)
         print(f"### Total de albuns encontrados: {len(albums)}")
@@ -232,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description="Baixa midias de albuns publicos do Erome.")
     parser.add_argument("target", nargs="?", help="URL de album, URL de busca, ou caminho de um .txt")
     parser.add_argument("--search", help="Termo de busca (ex: --search amador)")
-    parser.add_argument("--pages", type=int, default=1, help="Quantas paginas da busca varrer (padrao 1)")
+    parser.add_argument("--pages", type=str, default="1", help="Pagina especifica (ex: 3) ou intervalo (ex: 1-5). Padrao=1")
     parser.add_argument("-o", "--output", default="erome_downloads", help="Pasta de destino")
     parser.add_argument("--skip-images", action="store_true", help="Baixar somente videos")
     parser.add_argument("--workers", type=int, default=4, help="Downloads simultaneos (padrao 4)")
@@ -263,7 +286,26 @@ def main():
 
     albums = expand_targets(target, args.pages, session)
     if not albums:
-        print("Nenhum album para baixar.")
+        print("Nenhum album encontrado/valido.")
+        return
+
+    HISTORY_FILE = "erome_history.txt"
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            history = set(line.strip() for line in f if line.strip())
+    else:
+        history = set()
+
+    filtered_albums = []
+    for album in albums:
+        if album in history:
+            print(f"  [historico] Pulando album ja processado: {album}")
+        else:
+            filtered_albums.append(album)
+            
+    albums = filtered_albums
+    if not albums:
+        print("\nTodos os albuns desta busca ja foram baixados/processados anteriormente!")
         return
 
     os.makedirs(args.output, exist_ok=True)
@@ -313,6 +355,7 @@ def main():
         for n, (album, title, topic_id, topico_nome) in enumerate(album_decisions, 1):
             if topic_id == "skip":
                 print(f"\n[{n}/{len(albums)}] Pulando album: {title}")
+                with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(album + "\n")
                 continue
             
             print(f"\n[{n}/{len(albums)}] Baixando: {title}")
@@ -322,19 +365,24 @@ def main():
                 print(f"  -> Enviando para o Telegram (Destino: {topico_nome})...")
                 ok = uploader.upload_files(topic_id, files, caption=title)
                 
-                if ok and getattr(args, 'clean_local', False):
-                    print(f"  -> Apagando arquivos locais (--clean-local ativado)...")
-                    try:
-                        shutil.rmtree(folder)
-                    except Exception as e:
-                        print(f"  [AVISO] Nao foi possivel apagar {folder}: {e}")
+                if ok:
+                    with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(album + "\n")
+                    if getattr(args, 'clean_local', False):
+                        print(f"  -> Apagando arquivos locais (--clean-local ativado)...")
+                        try:
+                            import shutil
+                            shutil.rmtree(folder)
+                        except Exception as e:
+                            print(f"  [AVISO] Nao foi possivel apagar {folder}: {e}")
+            else:
+                with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(album + "\n")
     else:
         for n, album in enumerate(albums, 1):
             print(f"\n[{n}/{len(albums)}]")
             process_album(album, args.output, args.skip_images, session, workers=args.workers)
+            with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(album + "\n")
 
     print("\nFinalizado.")
-
 
 if __name__ == "__main__":
     main()

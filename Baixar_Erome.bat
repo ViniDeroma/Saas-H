@@ -57,7 +57,7 @@ set /p "usetg=Enviar downloads para o Telegram? (s/N): "
 echo.
 echo ----------------------------------------------------
 
-set "ARGS=--workers 16"
+set "ARGS=--workers 8"
 if /i "%soimg%"=="s" set "ARGS=%ARGS% --skip-images"
 if /i "%usetg%"=="s" set "ARGS=%ARGS% --telegram --clean-local"
 
@@ -75,9 +75,7 @@ set "termo="
 set /p "termo=Pesquisar por: "
 if "%termo%"=="" goto menu
 
-set "paginas="
-set /p "paginas=Quantas paginas baixar? (cada pagina ~36 albuns) [1]: "
-if "%paginas%"=="" set "paginas=1"
+set "paginas=ask"
 
 set "soimg="
 set /p "soimg=Baixar SO videos (sem imagens)? (s/N): "
@@ -88,7 +86,7 @@ echo ----------------------------------------------------
 echo  ATENCAO: varias paginas = muitos albuns e muitos GB!
 echo ----------------------------------------------------
 
-set "ARGS=--search "%termo%" --pages %paginas% --workers 16"
+set "ARGS=--search "%termo%" --pages %paginas% --workers 8"
 if /i "%soimg%"=="s" set "ARGS=%ARGS% --skip-images"
 if /i "%usetg%"=="s" set "ARGS=%ARGS% --telegram --clean-local"
 
